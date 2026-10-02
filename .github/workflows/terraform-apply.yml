@@ -1,0 +1,96 @@
+name: "GitOps - Auto Deploy"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select Target Infrastructure Environment Workspace Tier to Deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write # 🔑 Grants permission to dynamically mint keyless AWS OIDC tokens!
+
+jobs:
+  # ============================================================================
+  # JOB 1: AUTOMATED VITE-REACT DOCKERIZATION ENGINE
+  # ============================================================================
+  build-and-push-image:
+    name: "Compile React Code & Push to DockerHub"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Codebase Repository"
+        uses: actions/checkout@v4
+
+      # 🔐 SECURE REGISTRY LOGIN: Logs into DockerHub using your secrets parameters
+      - name: "Log in to DockerHub Registry"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 🐳 HIGH-SCALE COMPILATION GATE: Builds your real Vite React project via your multi-stage Dockerfile!
+      - name: "Build Production Multi-Stage Container Image"
+        uses: docker/build-push-action@v5
+        with:
+          context: ./react-app # Targets your fresh React source code folder!
+          file: ./react-app/Dockerfile
+          push: true
+          tags: "minddecoders/react-social-link-app:latest" 
+
+  # ============================================================================
+  # JOB 2: HEADLESS CLOUD IAC COMPILATION & INFRASTRUCTURE DEPLOYMENT
+  # ============================================================================
+  terraform-apply:
+    name: "Execute Automated Live Cloud Deployment"
+    runs-on: ubuntu-latest
+    needs: build-and-push-image # 🏎️ SEQUENTIAL LOCK: Waits for the Docker image to build successfully first!
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./application-infra
+
+    steps:
+      - name: "Checkout Repository Code"
+        uses: actions/checkout@v4
+
+      # 🔑 100% KEYLESS HANDSHAKE: Authenticates to AWS cleanly using your secure OIDC provider
+      - name: "Authenticate to AWS using OIDC"
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::951614974272:role/sidra-github-actions-oidc-execution-role
+          aws-region: eu-west-1
+
+      - name: "Setup Terraform Engine"
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.2"
+
+      - name: "Initialize S3 Remote Backend Connection"
+        run: terraform init -input=false
+
+      # 📁 DYNAMIC ENVIRONMENT ROUTING: Switches seamlessly into the selected workspace room
+      - name: "Select or Create Target Workspace Environment"
+        run: |
+          echo "Routing deployment straight into environment tier: ${{ github.event.inputs.environment }}"
+          terraform workspace select ${{ github.event.inputs.environment }} || terraform workspace new ${{ github.event.inputs.environment }}
+
+      - name: "Terraform Format Check"
+        run: terraform fmt -check -recursive
+
+      - name: "Execute Code Semantics Validation Gate"
+        run: terraform validate
+      
+      - name: "Generate Live Cloud Infrastructure Plan"
+        run: terraform plan  -input=false
+
+
+      # 🪐 Draws down the fresh image from DockerHub and deploys your multi-tier React platform live across Europe!
+      - name: "Generate and Apply Live Cloud Infrastructure"
+        run: terraform apply -auto-approve -input=false
