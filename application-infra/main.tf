@@ -484,3 +484,4 @@ resource "aws_lb_listener" "react_social_link_http_listener" {
     target_group_arn = aws_lb_target_group.react_social_link_ecs_tg.arn
   }
 }
+
